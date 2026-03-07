@@ -1,0 +1,19 @@
+# datasets
+datasets/raw/*
+datasets/occluded/*
+datasets/masks/*
+datasets/labels/*
+
+# outputs
+output/*
+
+# models
+models/*.pt
+models/*.pth
+
+# caches
+__pycache__/
+*.pyc
+.cache/
+
+
