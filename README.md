@@ -254,7 +254,7 @@ weapon_project/
 
 ---
 
-## Ethical Statement (For Faculty)
+## Ethical Statement 
 - Dataset used for academic forensic research only
 - No weapon blueprint generation — focus is reconstruction under occlusion
 - All models are publicly available pretrained checkpoints
