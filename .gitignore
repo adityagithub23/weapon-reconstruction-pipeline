@@ -8,8 +8,9 @@ datasets/labels/*
 output/*
 
 # models
-models/*.pt
-models/*.pth
+models/*
+!models/*.pt
+!models/*.pth
 
 # caches
 __pycache__/

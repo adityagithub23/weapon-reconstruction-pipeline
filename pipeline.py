@@ -1,11 +1,7 @@
 """
 pipeline.py
 -----------
-End-to-end weapon reconstruction pipeline with adaptive canvas expansion.
-
-Flow:
-Image → RT-DETR detect → SAM visible mask → Adaptive canvas expansion
-→ Stable Diffusion reconstruction → Forensic sketch
+End-to-end weapon reconstruction pipeline
 """
 
 import argparse
@@ -36,14 +32,15 @@ DEFAULT_CONFIG = {
     "sd_guidance": 7.5,
     "sd_seed": 42,
     "sketch_style": "forensic",
-    "save_intermediates": True,
 }
 
 
 class WeaponReconstructionPipeline:
 
     def __init__(self, config=None):
+
         self.config = {**DEFAULT_CONFIG, **(config or {})}
+
         self.rtdetr_model = None
         self.sam_predictor = None
         self.sd_pipeline = None
@@ -55,20 +52,20 @@ class WeaponReconstructionPipeline:
             return
 
         print("\n============================================================")
-        print("  Loading Weapon Reconstruction Pipeline Models")
+        print("Loading Models")
         print("============================================================")
 
-        print("\n[1/3] Loading RT-DETR...")
+        print("\n[1/3] RT-DETR")
         self.rtdetr_model = load_model(self.config["rtdetr_model"])
 
-        print("\n[2/3] Loading SAM...")
+        print("\n[2/3] SAM")
         self.sam_predictor = load_sam_model(self.config["sam_model"])
 
-        print("\n[3/3] Loading Stable Diffusion...")
+        print("\n[3/3] Stable Diffusion")
         self.sd_pipeline = load_inpainting_pipeline()
 
         self._models_loaded = True
-        print("\n✅ All models loaded. Pipeline ready.\n")
+        print("\nModels loaded.\n")
 
     def process_image(self, image_path, output_dir="output/results"):
 
@@ -76,24 +73,20 @@ class WeaponReconstructionPipeline:
             self.load_models()
 
         image_path = Path(image_path)
-        if not image_path.exists():
-            return {"success": False, "error": "Image not found"}
 
         stem = image_path.stem
         out_dir = Path(output_dir) / stem
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        t_start = time.time()
-
-        print(f"\n[Pipeline] Processing: {image_path.name}")
-
         image_bgr = cv2.imread(str(image_path))
 
-        # --------------------------------------------------------
-        # STEP 1 — DETECTION
-        # --------------------------------------------------------
+        print(f"\nProcessing {image_path.name}")
 
-        print("[Step 1] RT-DETR detection...")
+        # --------------------------------
+        # STEP 1 — DETECTION
+        # --------------------------------
+
+        print("\n[1] Detection")
 
         detections = run_inference(
             self.rtdetr_model,
@@ -105,17 +98,17 @@ class WeaponReconstructionPipeline:
 
         if primary is None:
             print("No weapon detected.")
-            return {"success": False}
-
-        print(f"Detected: {primary['class_name']} ({primary['confidence']:.3f})")
+            return
 
         bbox = primary["bbox"]
 
-        # --------------------------------------------------------
-        # STEP 2 — SAM SEGMENTATION
-        # --------------------------------------------------------
+        print(f"Detected: {primary['class_name']}")
 
-        print("[Step 2] SAM segmentation...")
+        # --------------------------------
+        # STEP 2 — SAM SEGMENTATION
+        # --------------------------------
+
+        print("\n[2] SAM segmentation")
 
         seg = segment_weapon(
             self.sam_predictor,
@@ -124,49 +117,40 @@ class WeaponReconstructionPipeline:
             padding=self.config["sam_padding"],
         )
 
+        sam_mask = seg["visible_mask"]
+
         print(f"SAM score: {seg['sam_score']:.3f}")
 
-        # --------------------------------------------------------
-        # STEP 3 — ADAPTIVE CANVAS EXPANSION
-        # --------------------------------------------------------
+        # --------------------------------
+        # STEP 3 — ADAPTIVE CANVAS
+        # --------------------------------
 
-        print("[Step 3] Adaptive canvas expansion...")
+        print("\n[3] Adaptive canvas expansion")
 
-        crop512, visible_mask, missing_mask = compute_adaptive_crop(
+        crop, visible_mask, missing_mask = compute_adaptive_crop(
             image_bgr,
             bbox,
-            expansion_factor=2.8,
-            target_size=512,
+            sam_mask,
+            expansion_factor=2.6,
+            target_size=768
         )
 
-        # --------------------------------------------------------
-        # SAVE INTERMEDIATE FILES
-        # --------------------------------------------------------
+        crop_path = out_dir / f"{stem}_crop.jpg"
+        mask_vis_path = out_dir / f"{stem}_mask_visible.png"
+        mask_mis_path = out_dir / f"{stem}_mask_missing.png"
 
-        paths = {}
+        cv2.imwrite(str(crop_path), crop)
+        cv2.imwrite(str(mask_vis_path), visible_mask)
+        cv2.imwrite(str(mask_mis_path), missing_mask)
 
-        if self.config["save_intermediates"]:
+        # --------------------------------
+        # STEP 4 — DIFFUSION
+        # --------------------------------
 
-            crop_path = out_dir / f"{stem}_crop512.jpg"
-            mask_vis_path = out_dir / f"{stem}_mask_visible.png"
-            mask_mis_path = out_dir / f"{stem}_mask_missing.png"
-
-            cv2.imwrite(str(crop_path), crop512)
-            cv2.imwrite(str(mask_vis_path), visible_mask)
-            cv2.imwrite(str(mask_mis_path), missing_mask)
-
-            paths["crop"] = str(crop_path)
-            paths["mask_visible"] = str(mask_vis_path)
-            paths["mask_missing"] = str(mask_mis_path)
-
-        # --------------------------------------------------------
-        # STEP 4 — DIFFUSION RECONSTRUCTION
-        # --------------------------------------------------------
-
-        print("[Step 4] Stable Diffusion reconstruction...")
+        print("\n[4] Diffusion reconstruction")
 
         reconstructed_list = inpaint_weapon(
-            crop_image=crop512,
+            crop_image=crop,
             missing_mask=missing_mask,
             class_name=primary["class_name"],
             num_inference_steps=self.config["sd_steps"],
@@ -179,15 +163,13 @@ class WeaponReconstructionPipeline:
         recon_path = out_dir / f"{stem}_reconstructed.jpg"
         reconstructed.save(str(recon_path))
 
-        paths["reconstructed"] = str(recon_path)
-
         print("Reconstruction saved.")
 
-        # --------------------------------------------------------
+        # --------------------------------
         # STEP 5 — FORENSIC SKETCH
-        # --------------------------------------------------------
+        # --------------------------------
 
-        print("[Step 5] Forensic sketch generation...")
+        print("\n[5] Sketch generation")
 
         recon_bgr = cv2.cvtColor(np.array(reconstructed), cv2.COLOR_RGB2BGR)
 
@@ -201,11 +183,9 @@ class WeaponReconstructionPipeline:
         sketch_path = out_dir / f"{stem}_sketch.png"
         cv2.imwrite(str(sketch_path), sketch)
 
-        paths["sketch"] = str(sketch_path)
-
-        # --------------------------------------------------------
-        # STEP 6 — COMPARISON IMAGE
-        # --------------------------------------------------------
+        # --------------------------------
+        # STEP 6 — COMPARISON
+        # --------------------------------
 
         comparison_path = out_dir / f"{stem}_comparison.jpg"
 
@@ -216,31 +196,8 @@ class WeaponReconstructionPipeline:
             output_path=str(comparison_path),
         )
 
-        paths["comparison"] = str(comparison_path)
-
-        # --------------------------------------------------------
-        # METADATA
-        # --------------------------------------------------------
-
-        elapsed = time.time() - t_start
-
-        metadata = {
-            "image": str(image_path),
-            "class": primary["class_name"],
-            "confidence": primary["confidence"],
-            "bbox": bbox,
-            "sam_score": seg["sam_score"],
-            "processing_time": elapsed,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        with open(out_dir / f"{stem}_metadata.json", "w") as f:
-            json.dump(metadata, f, indent=2)
-
-        print(f"\n✅ Done in {elapsed:.1f}s")
-        print("Output folder:", out_dir)
-
-        return {"success": True, "paths": paths}
+        print("\nDone.")
+        print("Output:", out_dir)
 
 
 if __name__ == "__main__":

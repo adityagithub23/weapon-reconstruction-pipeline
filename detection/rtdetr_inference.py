@@ -23,7 +23,7 @@ from ultralytics import RTDETR
 CLASS_NAMES = {0: "fire", 1: "firearm", 2: "grenade", 3: "knife", 4: "pistol", 5: "rocket"}
 
 # Classes that are actual weapons we care about for reconstruction
-WEAPON_CLASSES = {1, 2, 3, 4, 5}  # exclude "fire" (class 0)
+WEAPON_CLASSES = {0, 1, 2, 3, 4, 5}  # exclude "fire" (class 0)
 
 # Text prompts for SD Inpainting — one per weapon class
 SD_PROMPTS = {

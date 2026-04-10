@@ -17,6 +17,7 @@ Folder structure expected:
 """
 
 import os
+from unittest import result
 import cv2
 import random
 import argparse
@@ -45,7 +46,9 @@ def random_rectangle_occlusion(image, bbox, intensity=0.4):
     occ_x = random.randint(x1, max(x1, x2 - occ_w))
     occ_y = random.randint(y1, max(y1, y2 - occ_h))
 
-    cv2.rectangle(result, (occ_x, occ_y), (occ_x + occ_w, occ_y + occ_h), (0, 0, 0), -1)
+    # cv2.rectangle(result, (occ_x, occ_y), (occ_x + occ_w, occ_y + occ_h), (0, 0, 0), -1)
+    color = tuple(np.random.randint(0,255,3).tolist())
+    cv2.rectangle(result, (occ_x, occ_y), (occ_x + occ_w, occ_y + occ_h), color, -1)
     return result, (occ_x, occ_y, occ_x + occ_w, occ_y + occ_h)
 
 
